@@ -116,11 +116,12 @@ client.on("interactionCreate", async (inter) => {
 })
 
 const clientId = '1098049777779880098';
-const guildId = '313342096218128384';
 
 const rest = new REST({version:'9'}).setToken(Token)
 try {
-    rest.put(Routes.applicationGuildCommands(clientId, guildId),{body: cmds});
+  client.guilds.cache.each(guild => {
+    rest.put(Routes.applicationGuildCommands(clientId, guild.Id),{body: cmds})
+  })
 } catch(err) {
     console.error(err)
 }
