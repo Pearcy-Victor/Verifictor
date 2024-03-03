@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node bot",
-    "forever": "forever start bot.js"
+    "chronically": "forever start bot.js",
+    "stop": "forever stopall"
   }
 }
