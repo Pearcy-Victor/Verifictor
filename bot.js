@@ -1,4 +1,5 @@
-const { Client, ActionRowBuilder, InteractionType, ModalBuilder, TextInputBuilder, TextInputStyle, SlashCommandBuilder, GatewayIntentBits, REST, Routes, PermissionFlagsBits, ApplicationCommandOptionType, SlashCommandStringOption, SlashCommandRoleOption} = require("discord.js")
+require('dotenv').config()
+const { Client, ActionRowBuilder, InteractionType, ModalBuilder, TextInputBuilder, TextInputStyle, SlashCommandBuilder, GatewayIntentBits, REST, Routes, PermissionFlagsBits, SlashCommandChannelOption, SlashCommandStringOption, SlashCommandRoleOption, SlashCommandBooleanOption } = require("discord.js")
 const fs = require("fs")
 const ping = require("./server")
 
@@ -33,6 +34,16 @@ const cmds = [
         .setDescription("The role given to people who entered the password correctly")
         .setRequired(true)
     )
+    .addChannelOption(
+      new SlashCommandChannelOption()
+        .setName("log")
+        .setDescription("The channel which logs each interaction made by the user in verification")
+    )
+    .addBooleanOption(
+      new SlashCommandBooleanOption()
+        .setName("case-insensitivity")
+        .setDescription("Disables case sensitive matching for the password.")
+    )
     .toJSON(),
 ]
 
@@ -66,31 +77,40 @@ client.on("interactionCreate", async (inter) => {
                     await inter.showModal(modal)
                 break
             case "set":
+              let guilds = JSON.parse(fs.readFileSync('./guilds.json'))
+              let guild = guilds[inter.commandGuildId] || {}
+              const newPassword = inter.options.get("password").value
+              const setRole = inter.options.get("role").value
+              const log = inter.options.get("log").value || false
+              const sens = inter.options.get("case-insensitivity").value || false
+              guild["password"] = newPassword
+              guild["role"] = setRole
+              if (log) {guild["log"] = log}
+              guild["nocase"] = sens
+              guilds[inter.commandGuildId] = guild
+              fs.writeFileSync("./guilds.json",JSON.stringify(guilds, null, "\t"))
                 
-                let guilds = JSON.parse(fs.readFileSync('./guilds.json'))
-                let guild = guilds[inter.commandGuildId] || {}
-                const newPassword = inter.options.get("password").value
-                const setRole = inter.options.get("role").value
-                guild["password"] = newPassword
-                guild["role"] = setRole
-                guilds[inter.commandGuildId] = guild
-                fs.writeFileSync("./guilds.json",JSON.stringify(guilds, null, "\t"))
-                
-                inter.reply({
-                    content: "Set up is done.",
-                    ephemeral: true
-                })
-                break
+              inter.reply({
+                content: "Set up is done.",
+                ephemeral: true
+              })
+              break
         }
     }
 
     if (inter.type === InteractionType.ModalSubmit) {
         if (inter.customId === "verifier") {
             const guild = JSON.parse(fs.readFileSync("./guilds.json"))[inter.guildId]
-            const password = guild["password"]
+            let password = guild["password"]
             const role = guild["role"]
-            const response = inter.fields.getTextInputValue("input");
+            const log = await inter.member.guild.channels.fetch(guild["log"]) || false
+            let response = inter.fields.getTextInputValue("input").trim();
             const owner = await inter.member.guild.fetchOwner()
+            const sens = guild["nocase"]
+            if (sens) {
+              password = password.toLowerCase()
+              response = response.toLowerCase()
+            }
             if (response === password) {
                 if (inter.guild.members.me.roles.highest.position < inter.guild.roles.resolve(role).position) {
                     inter.reply({
@@ -99,6 +119,9 @@ client.on("interactionCreate", async (inter) => {
                     })
                     return
                 } else {
+                    if (log) {
+                      log.send(`${inter.member.displayName} (${inter.member.id}) successfully verified into the server.`)
+                    }
                     inter.member.roles.add(role)
                     inter.reply({
                         content: "Success!",
@@ -106,8 +129,11 @@ client.on("interactionCreate", async (inter) => {
                     })
                 }
             } else {
+              if (log) {
+                log.send(`${inter.member.displayName} (${inter.member.id}) failed to verified into the server. (They entered:"${response}")`)
+              }
                 inter.reply({
-                    content: `The password is incorrect, please contact ${owner} for the password!`,
+                    content: `The password is incorrect, please try again or contact ${owner} for the password!`,
                     ephemeral: true
                 })
             }
@@ -115,18 +141,15 @@ client.on("interactionCreate", async (inter) => {
     }
 })
 
-const clientId = '1098049777779880098';
-
-const rest = new REST({version:'9'}).setToken(Token)
-try {
-  client.guilds.cache.each(guild => {
-    rest.put(Routes.applicationGuildCommands(clientId, guild.Id),{body: cmds})
-  })
-} catch(err) {
-    console.error(err)
-}
-
-client.once("ready", () => {
+client.once("ready", () => {  
+  const rest = new REST({version:'9'}).setToken(Token)
+  try {
+    client.guilds.cache.forEach(guild => {
+      rest.put(Routes.applicationGuildCommands(client.application.id, guild.id),{body: cmds})
+    })
+  } catch(err) {
+      console.error(err)
+  }
     console.log("Verifictor activated.")
 })
 
@@ -136,5 +159,5 @@ client.on("rateLimit", (data) => {
     }
 })
 
-ping()
+//ping()
 client.login(Token);
